@@ -48,11 +48,28 @@ class Node:
     def from_dict(data: dict) -> "Node":
         node = Node(data["node_type"], data["title"], data.get("var_name", ""))
         node.id = data["id"]
-        node.params = data.get("params", {})
+        
+        # Migration logic
+        params = data.get("params", {})
+        if node.node_type == "action" and "action" in params and "tasks" not in params:
+            # Migrate old single-action format to tasks list
+            params["tasks"] = [{"action": params.get("action", ""), "target": params.get("target", ""), "value": params.get("value", "")}]
+        if node.node_type == "decision" and "left_var" in params and "conditions" not in params:
+            # Migrate old single-condition to conditions list
+            params["conditions"] = [{"left_var": params.get("left_var", ""), "operator": params.get("operator", "=="), "right_var": params.get("right_var", "")}]
+            
+        node.params = params
         node.x = data.get("x", 100)
         node.y = data.get("y", 100)
         node.inputs = data.get("inputs", [])
-        node.outputs = data.get("outputs", [])
+        
+        # Migrate decision outputs if they were initialized as true/false but node has conditions
+        outputs = data.get("outputs", [])
+        if node.node_type == "decision":
+            c_len = len(params.get("conditions", []))
+            # Just rebuild ports
+            outputs = [f"cond_{i}" for i in range(c_len)] + ["else"]
+        node.outputs = outputs
         return node
 
 
@@ -112,7 +129,8 @@ class NodeEngine:
             node.outputs = ["done"]
         elif node_type == "decision":
             node.inputs = ["trigger"]
-            node.outputs = ["true", "false"]
+            conds_len = len(node.params.get("conditions", [1])) if node.params else 1
+            node.outputs = [f"cond_{i}" for i in range(conds_len)] + ["else"]
 
         self.nodes[node.id] = node
         return node
@@ -133,6 +151,17 @@ class NodeEngine:
             for k, v in kwargs.items():
                 if hasattr(node, k):
                     setattr(node, k, v)
+
+    def update_decision_ports(self, node_id: str) -> None:
+        """Called when a decision node adds or removes conditions."""
+        node = self.nodes.get(node_id)
+        if not node or node.node_type != "decision": return
+        c_len = len(node.params.get("conditions", []))
+        new_outputs = [f"cond_{i}" for i in range(c_len)] + ["else"]
+        
+        # Filter connections that use ports that no longer exist
+        self.connections = [c for c in self.connections if not (c.from_node == node_id and c.from_port not in new_outputs)]
+        node.outputs = new_outputs
 
     # ─── Connections ──────────────────────────────────────────────
     def connect(self, from_node: str, from_port: str,
@@ -226,7 +255,12 @@ class NodeEngine:
         for nid, ndata in data.get("nodes", {}).items():
             self.nodes[nid] = Node.from_dict(ndata)
         for cdata in data.get("connections", []):
-            self.connections.append(Connection.from_dict(cdata))
+            conn = Connection.from_dict(cdata)
+            # Migrate connections from true/false to cond_0/else
+            if self.nodes.get(conn.from_node) and self.nodes[conn.from_node].node_type == "decision":
+                if conn.from_port == "true": conn.from_port = "cond_0"
+                if conn.from_port == "false": conn.from_port = "else"
+            self.connections.append(conn)
 
     def clear(self) -> None:
         self.nodes.clear()

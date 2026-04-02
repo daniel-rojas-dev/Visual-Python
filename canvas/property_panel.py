@@ -85,7 +85,9 @@ class PropertyPanel(ctk.CTkFrame):
         self._add_header("🎨 Properties", colors)
         props = wdata["props"]
         for key, val in props.items():
-            if "color" in key.lower(): self._add_color_row(key, val, var_name, colors)
+            if key == "variable_key":
+                self._add_variable_key_row(key, val, var_name, colors)
+            elif "color" in key.lower(): self._add_color_row(key, val, var_name, colors)
             elif isinstance(val, (int, float)) and key not in ("from_", "to"):
                 self._add_slider_row(key, val, 0, 100, lambda v, k=key: self._update_prop(var_name, k, v), colors)
             elif isinstance(val, str): self._add_entry_row(key, val, var_name, colors)
@@ -128,42 +130,63 @@ class PropertyPanel(ctk.CTkFrame):
                                 lambda v: self._update_node_param_top(node_id, "var_name", v), colors)
 
         elif node.node_type == "action":
-            actions = ["change_text", "change_color", "change_view", "save_variable", "print_variable"]
-            current_action = node.params.get("action", "")
-            self._add_option_row("Action", current_action, actions, 
-                                lambda v: self._update_node_param(node_id, "action", v, refresh_panel=True), colors)
+            tasks = node.params.get("tasks", [])
+            for i, task in enumerate(tasks):
+                self._add_header(f"⚡ Task {i+1}", colors)
+                actions = ["change_text", "change_color", "change_view", "save_variable", "print_variable"]
+                current_action = task.get("action", "")
+                
+                # We need a dynamic update callback for dicts inside the tasks list
+                def _update_task(idx, param, val, refresh=False):
+                    self.node_engine.nodes[node_id].params["tasks"][idx][param] = val
+                    if self.node_canvas: self.node_canvas.redraw_all()
+                    self.canvas_mgr._trigger_change()
+                    if refresh: self.after(10, lambda: self._on_node_selection_changed(node_id))
+                    
+                self._add_option_row("Action", current_action, actions, 
+                                    lambda v, idx=i: _update_task(idx, "action", v, True), colors)
+                
+                if current_action != "save_variable":
+                    self._add_option_row("Target", task.get("target", ""), self._get_all_widget_names(), 
+                                        lambda v, idx=i: _update_task(idx, "target", v), colors)
+                                    
+                if current_action == "change_text":
+                    self._add_entry_row_dict("Text", task.get("value", ""), lambda v, idx=i: _update_task(idx, "value", v), colors)
+                elif current_action == "change_color":
+                    self._add_color_row_dict("Text Color", task.get("text_color", ""), lambda v, idx=i: _update_task(idx, "text_color", v, True), colors)
+                    self._add_color_row_dict("Background", task.get("fg_color", ""), lambda v, idx=i: _update_task(idx, "fg_color", v, True), colors)
+                elif current_action == "change_view":
+                    views = list(self.canvas_mgr.views.keys())
+                    self._add_option_row("View", task.get("view_name", ""), views,
+                                        lambda v, idx=i: _update_task(idx, "view_name", v), colors)
+                elif current_action == "save_variable":
+                    entries = self._get_widgets_by_type("CTkEntry")
+                    current_src = task.get("source_entry", "")
+                    current_var = task.get("target_var", "")
+                    if not current_src and entries and entries[0] != "None Setup":
+                        current_src = entries[0]
+                        self.node_engine.nodes[node_id].params["tasks"][i]["source_entry"] = current_src
+                    if not current_var:
+                        current_var = "my_var"
+                        self.node_engine.nodes[node_id].params["tasks"][i]["target_var"] = current_var
+                    self._add_option_row("Source Entry", current_src, entries,
+                                        lambda v, idx=i: _update_task(idx, "source_entry", v), colors)
+                    self._add_entry_row_dict("Variable Name", current_var, lambda v, idx=i: _update_task(idx, "target_var", v), colors)
+                elif current_action == "print_variable":
+                    self._add_entry_row_dict("Format String", task.get("format_string", "Hola {my_var}"), lambda v, idx=i: _update_task(idx, "format_string", v), colors)
+                
+                # Delete task button if more than 1
+                if len(tasks) > 1:
+                    del_btn = ctk.CTkButton(self.scroll, text="✖ Remove Task", fg_color="transparent", text_color=colors["error"], hover_color=colors["bg_primary"],
+                                            height=24, command=lambda idx=i: self._remove_action_task(node_id, idx))
+                    del_btn.pack(fill="x", padx=8, pady=(2, 6))
+                    self._rows.append(del_btn)
             
-            if current_action != "save_variable":
-                self._add_option_row("Target", node.params.get("target", ""), self._get_all_widget_names(), 
-                                    lambda v: self._update_node_param(node_id, "target", v), colors)
-                                
-            if current_action == "change_text":
-                self._add_entry_row_node("Text", node.params.get("value", ""), node_id, "value", colors)
-            elif current_action == "change_color":
-                self._add_color_row_node("Text Color", node.params.get("text_color", ""), node_id, "text_color", colors)
-                self._add_color_row_node("Background", node.params.get("fg_color", ""), node_id, "fg_color", colors)
-            elif current_action == "change_view":
-                views = list(self.canvas_mgr.views.keys())
-                self._add_option_row("View", node.params.get("view_name", ""), views,
-                                    lambda v: self._update_node_param(node_id, "view_name", v), colors)
-            elif current_action == "save_variable":
-                entries = self._get_widgets_by_type("CTkEntry")
-                current_src = node.params.get("source_entry", "")
-                current_var = node.params.get("target_var", "")
-                # Auto-init: if user hasn't picked yet, commit the first available entry
-                if not current_src and entries and entries[0] != "None Setup":
-                    current_src = entries[0]
-                    if self.node_engine and node_id in self.node_engine.nodes:
-                        self.node_engine.nodes[node_id].params["source_entry"] = current_src
-                if not current_var:
-                    current_var = "my_var"
-                    if self.node_engine and node_id in self.node_engine.nodes:
-                        self.node_engine.nodes[node_id].params["target_var"] = current_var
-                self._add_option_row("Source Entry", current_src, entries,
-                                    lambda v: self._update_node_param(node_id, "source_entry", v), colors)
-                self._add_entry_row_node("Variable Name", current_var, node_id, "target_var", colors)
-            elif current_action == "print_variable":
-                self._add_entry_row_node("Format String", node.params.get("format_string", "Hola {nombre_variable}"), node_id, "format_string", colors)
+            # Add Task Button
+            add_btn = ctk.CTkButton(self.scroll, text="➕ Add Task", fg_color=colors.get("header", colors.get("bg_panel", "#333333")), hover_color=colors.get("fg_accent", "#50e3c2"),
+                                    command=lambda: self._add_action_task(node_id))
+            add_btn.pack(fill="x", padx=8, pady=(10, 10))
+            self._rows.append(add_btn)
 
         elif node.node_type == "decision":
             entries = self._get_widgets_by_type("CTkEntry") + self._get_widgets_by_type("CTkEntryNum")
@@ -171,21 +194,42 @@ class PropertyPanel(ctk.CTkFrame):
             left_opts = entries + vars_list
             if not left_opts or left_opts == ["None Setup"]:
                 left_opts = [""]
-            
-            current_left = node.params.get("left_var", "")
-            if not current_left and left_opts and left_opts[0] != "":
-                current_left = left_opts[0]
-                if self.node_engine and node_id in self.node_engine.nodes:
-                    self.node_engine.nodes[node_id].params["left_var"] = current_left
+                
+            conds = node.params.get("conditions", [])
+            for i, cond in enumerate(conds):
+                header_text = "❓ Condición SÍ" if len(conds) == 1 else f"❓ Condición {i+1} (C{i})"
+                self._add_header(header_text, colors)
+                
+                def _update_cond(idx, param, val):
+                    self.node_engine.nodes[node_id].params["conditions"][idx][param] = val
+                    if self.node_canvas: self.node_canvas.redraw_all()
+                    self.canvas_mgr._trigger_change()
+
+                current_left = cond.get("left_var", "")
+                if not current_left and left_opts and left_opts[0] != "":
+                    current_left = left_opts[0]
+                    self.node_engine.nodes[node_id].params["conditions"][i]["left_var"] = current_left
+                        
+                self._add_option_row("Left Var", current_left, left_opts,
+                                    lambda v, idx=i: _update_cond(idx, "left_var", v), colors)
+                                    
+                ops = node.params.get("operators_available", ["==", "!=", ">", "<", ">=", "<="])
+                self._add_option_row("Operator", cond.get("operator", "=="), ops,
+                                    lambda v, idx=i: _update_cond(idx, "operator", v), colors)
+                                    
+                self._add_entry_row_dict("Right Var/Literal", cond.get("right_var", ""), lambda v, idx=i: _update_cond(idx, "right_var", v), colors)
+                
+                if len(conds) > 1:
+                    del_btn = ctk.CTkButton(self.scroll, text="✖ Remove Cond", fg_color="transparent", text_color=colors["error"], hover_color=colors["bg_primary"],
+                                            height=24, command=lambda idx=i: self._remove_decision_cond(node_id, idx))
+                    del_btn.pack(fill="x", padx=8, pady=(2, 6))
+                    self._rows.append(del_btn)
                     
-            self._add_option_row("Left Var", current_left, left_opts,
-                                lambda v: self._update_node_param(node_id, "left_var", v), colors)
-                                
-            ops = node.params.get("operators_available", ["==", "!=", ">", "<", ">=", "<="])
-            self._add_option_row("Operator", node.params.get("operator", "=="), ops,
-                                lambda v: self._update_node_param(node_id, "operator", v), colors)
-                                
-            self._add_entry_row_node("Right Var/Literal", node.params.get("right_var", ""), node_id, "right_var", colors)
+            # Add Condition Button
+            add_btn = ctk.CTkButton(self.scroll, text="➕ Add Condition (ELIF)", fg_color=colors.get("header", colors.get("bg_panel", "#333333")), hover_color=colors.get("fg_accent", "#50e3c2"),
+                                    command=lambda: self._add_decision_cond(node_id))
+            add_btn.pack(fill="x", padx=8, pady=(10, 10))
+            self._rows.append(add_btn)
 
         # MANUAL CONNECTION
         if node.node_type != "decision":
@@ -201,34 +245,69 @@ class PropertyPanel(ctk.CTkFrame):
             self._add_option_row("Enlazar a", linked_to, ["None"] + [n["label"] for n in other_nodes], 
                                 lambda v: self._manual_connect(node_id, v, other_nodes), colors)
         else:
-            self._add_header("➡️ Next Step (True)", colors)
             other_nodes = self._get_other_nodes(node_id)
             current_conns = self.node_engine.get_connections_for_node(node_id)
+            conds_len = len(node.params.get("conditions", []))
             
-            linked_true = "None"
-            for c in current_conns:
-                if c.from_node == node_id and c.from_port == "true":
-                    tn = self.node_engine.nodes.get(c.to_node)
-                    if tn: linked_true = f"{tn.title} ({tn.id[:4]})"
-                    
-            self._add_option_row("Enlazar Si True", linked_true, ["None"] + [n["label"] for n in other_nodes], 
-                                lambda v: self._manual_connect(node_id, v, other_nodes, "true"), colors)
+            for i in range(conds_len):
+                header = "➡️ SÍ (Verdadero)" if conds_len == 1 else f"➡️ SÍ (C{i})"
+                self._add_header(header, colors)
+                port_name = f"cond_{i}"
+                linked = "None"
+                for c in current_conns:
+                    if c.from_node == node_id and c.from_port == port_name:
+                        tn = self.node_engine.nodes.get(c.to_node)
+                        if tn: linked = f"{tn.title} ({tn.id[:4]})"
+                
+                row_label = "Enlazar si CUMPLE" if conds_len == 1 else f"Enlazar si {i}"
+                self._add_option_row(row_label, linked, ["None"] + [n["label"] for n in other_nodes], 
+                                    lambda v, p=port_name: self._manual_connect(node_id, v, other_nodes, p), colors)
 
-            self._add_header("➡️ Next Step (False)", colors)
-            linked_false = "None"
+            header_else = "➡️ SINO (Falso)" if conds_len == 1 else "➡️ SINO / Otros"
+            self._add_header(header_else, colors)
+            linked_else = "None"
             for c in current_conns:
-                if c.from_node == node_id and c.from_port == "false":
+                if c.from_node == node_id and c.from_port == "else":
                     tn = self.node_engine.nodes.get(c.to_node)
-                    if tn: linked_false = f"{tn.title} ({tn.id[:4]})"
-                    
-            self._add_option_row("Enlazar Si False", linked_false, ["None"] + [n["label"] for n in other_nodes], 
-                                lambda v: self._manual_connect(node_id, v, other_nodes, "false"), colors)
+                    if tn: linked_else = f"{tn.title} ({tn.id[:4]})"
+            
+            row_label_else = "Enlazar si NO CUMPLE" if conds_len == 1 else "Enlazar Rama SINO"
+            self._add_option_row(row_label_else, linked_else, ["None"] + [n["label"] for n in other_nodes], 
+                                lambda v: self._manual_connect(node_id, v, other_nodes, "else"), colors)
 
         # Delete Node
         del_btn = ctk.CTkButton(self.scroll, text="🗑️ Delete Node", fg_color=colors["error"], 
                                command=lambda: self._delete_node(node_id))
         del_btn.pack(fill="x", padx=8, pady=(16, 8))
         self._rows.append(del_btn)
+
+    def _add_action_task(self, node_id):
+        if self.node_engine and node_id in self.node_engine.nodes:
+            self.node_engine.nodes[node_id].params.setdefault("tasks", []).append({"action": "change_text", "target": "", "value": ""})
+            self._on_node_selection_changed(node_id)
+            self.canvas_mgr._trigger_change()
+            
+    def _remove_action_task(self, node_id, idx):
+        if self.node_engine and node_id in self.node_engine.nodes:
+            self.node_engine.nodes[node_id].params.get("tasks", []).pop(idx)
+            self._on_node_selection_changed(node_id)
+            self.canvas_mgr._trigger_change()
+            
+    def _add_decision_cond(self, node_id):
+        if self.node_engine and node_id in self.node_engine.nodes:
+            self.node_engine.nodes[node_id].params.setdefault("conditions", []).append({"left_var": "", "operator": "==", "right_var": ""})
+            self.node_engine.update_decision_ports(node_id)
+            self._on_node_selection_changed(node_id)
+            if self.node_canvas: self.node_canvas.redraw_all()
+            self.canvas_mgr._trigger_change()
+            
+    def _remove_decision_cond(self, node_id, idx):
+        if self.node_engine and node_id in self.node_engine.nodes:
+            self.node_engine.nodes[node_id].params.get("conditions", []).pop(idx)
+            self.node_engine.update_decision_ports(node_id)
+            self._on_node_selection_changed(node_id)
+            if self.node_canvas: self.node_canvas.redraw_all()
+            self.canvas_mgr._trigger_change()
 
     def _manual_connect(self, source_id: str, target_label: str, other_nodes: list, port: str = None) -> None:
         if not self.node_engine: return
@@ -343,6 +422,33 @@ class PropertyPanel(ctk.CTkFrame):
         entry.bind("<Return>", lambda e: self._update_node_param(node_id, param_key, entry.get()))
         self._rows.append(row)
 
+    def _add_entry_row_dict(self, label, current_val, update_cb, cols):
+        """Entry field that calls update_cb(value) on FocusOut/Return."""
+        r = ctk.CTkFrame(self.scroll, fg_color="transparent"); r.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(r, text=label, width=90, anchor="w", font=("Segoe UI", 11), text_color="#999999").pack(side="left")
+        entry = ctk.CTkEntry(r, height=26, font=("Segoe UI", 11), fg_color=cols["bg_primary"], border_color=cols["border"])
+        entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        entry.insert(0, current_val or "")
+        def _save(e=None): update_cb(entry.get())
+        entry.bind("<FocusOut>", _save)
+        entry.bind("<Return>", _save)
+        self._rows.append(r)
+
+    def _add_color_row_dict(self, label, current_val, update_cb, cols):
+        """Color-pick button that calls update_cb(hex_color)."""
+        r = ctk.CTkFrame(self.scroll, fg_color="transparent"); r.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(r, text=label, width=90, anchor="w", font=("Segoe UI", 11), text_color="#999999").pack(side="left")
+        display = current_val if current_val else cols["bg_primary"]
+        btn_text = current_val if current_val else "Pick"
+        btn = ctk.CTkButton(r, text=btn_text, width=70, height=24, fg_color=display,
+                            command=lambda: self._trigger_dict_color_pick(label, update_cb))
+        btn.pack(side="left", padx=4)
+        self._rows.append(r)
+
+    def _trigger_dict_color_pick(self, label, update_cb):
+        color = colorchooser.askcolor(title=f"Pick {label}")[1]
+        if color: update_cb(color)
+
     def _update_node_param(self, nid, k, v, refresh_panel=False):
         if self.node_engine and nid in self.node_engine.nodes:
             if self.node_engine.nodes[nid].params.get(k) == v:
@@ -389,6 +495,35 @@ class PropertyPanel(ctk.CTkFrame):
         entry.bind("<FocusOut>", lambda e: self.canvas_mgr.update_widget_props(var_name, {key: (entry.get().split(",") if is_list else entry.get())}))
         entry.bind("<Return>", lambda e: self.canvas_mgr.update_widget_props(var_name, {key: (entry.get().split(",") if is_list else entry.get())}))
         entry.bind("<KeyRelease>", lambda e: self.canvas_mgr.update_widget_props(var_name, {key: (entry.get().split(",") if is_list else entry.get())}))
+        self._rows.append(row)
+
+    def _add_variable_key_row(self, key, value, var_name, colors):
+        row = ctk.CTkFrame(self.scroll, fg_color="transparent"); row.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(row, text="Var Key", width=70, anchor="w", font=("Segoe UI", 11, "bold"), text_color=colors["fg_accent"]).pack(side="left")
+        entry = ctk.CTkEntry(row, height=26, font=("Segoe UI", 11), fg_color=colors["bg_primary"], border_color=colors["border"])
+        entry.pack(side="left", fill="x", expand=True, padx=(4, 0)); entry.insert(0, value)
+        
+        # Tracks the last committed key so we can remove it if the user renames.
+        _prev_key = [value]  # mutable cell
+
+        def _update_varkey(e=None):
+            val = entry.get().strip()
+            if val and not val.isidentifier():
+                entry.configure(border_color=colors["error"])
+                return
+            entry.configure(border_color=colors["border"])
+            old = _prev_key[0]
+            # Remove the old key from project_variables if it changed
+            if old and old != val and old in self.canvas_mgr.project_variables:
+                del self.canvas_mgr.project_variables[old]
+            if val and val not in self.canvas_mgr.project_variables:
+                self.canvas_mgr.project_variables[val] = ""
+            _prev_key[0] = val
+            self.canvas_mgr.update_widget_props(var_name, {key: val})
+
+        # Only commit on FocusOut / Enter — NOT on every KeyRelease
+        entry.bind("<FocusOut>", _update_varkey)
+        entry.bind("<Return>", _update_varkey)
         self._rows.append(row)
 
     def _add_entry_row_node(self, label, current_val, node_id, param_key, cols):

@@ -306,8 +306,8 @@ class CanvasManager:
         defaults = {
             "CTkLabel": {"text": "Label", "text_color": "", "fg_color": "transparent"},
             "CTkButton": {"text": "Button", "fg_color": "", "text_color": "", "hover_color": ""},
-            "CTkEntry": {"placeholder": "Enter text...", "text_color": "", "fg_color": ""},
-            "CTkEntryNum": {"placeholder": "Enter number...", "text_color": "", "fg_color": ""},
+            "CTkEntry": {"placeholder": "Enter text...", "text_color": "", "fg_color": "", "variable_key": ""},
+            "CTkEntryNum": {"placeholder": "Enter number...", "text_color": "", "fg_color": "", "variable_key": ""},
         }
         return defaults.get(widget_type, {}).copy()
 

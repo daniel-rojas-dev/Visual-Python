@@ -1,46 +1,46 @@
-# 🐍 Visual Python IDE — Low-Code App Builder
+# 🐍 Visual Python IDE v1.12 — "Object-Variable Binding"
 
-Visual Python es un entorno de desarrollo integrado (IDE) diseñado para crear aplicaciones de escritorio modernas con `customtkinter` de forma visual y rápida, eliminando la necesidad de escribir código repetitivo.
+Visual Python es un entorno de desarrollo integrado (IDE) low-code diseñado para crear aplicaciones profesionales con `customtkinter` de forma visual. La versión 1.12 introduce una arquitectura orientada a datos y lógica multi-hilo escalable.
 
 ---
 
 ## 🎨 Diseño Visual (Visual Canvas)
-- **Editor WYSIWYG:** Arrastra y suelta componentes directamente en el lienzo.
-- **Sistema de Grilla (Grid 12x12):** Alineación perfecta y simétrica de widgets mediante "snapping" automático.
-- **Vistas Múltiples:** Crea aplicaciones con varias ventanas/pantallas y gestiona su navegación de forma visual.
-- **Colores y Estilos:** Personaliza colores de fondo, texto, bordes y radios de esquina en tiempo real.
+- **Editor WYSIWYG:** Arrastra y suelta componentes directly en el lienzo.
+- **Sistema de Grilla (Grid 12x12):** Alineación perfecta y simétrica mediante "snapping".
+- **Vistas Múltiples:** Crea aplicaciones complejas con navegación fluida entre pantallas.
+- **Data Binding (v1.12):** Vincula Widgets de entrada (Entries) directamente a variables globales usando **Var Key**. Tus variables se sincronizan automáticamente mientras el usuario escribe.
 
-## 🔗 Lógica por Nodos (No-Code Engine)
-- **Programación Visual Estructurada:** Conecta eventos (clics, pulsaciones) con Nodos de Acción y Decisión.
-- **Decision Nodes (Rombo):** Crea bifurcaciones lógicas (`True/False`) fácilmente comparando valores exactos, widgets o múltiples variables (`==`, `<`, `>`).
-- **Sistema Local y Global de Variables:** 
-    - Guarda información ingresada (`save_variable`).
-    - Define variables globales persistentes con tipos explícitos (`Texto`, `Número`, `Bool`) a través del panel `🔧 Manage Variables`.
-- **Interpretador Universal:** 
-    - Imprime y concatena datos dinámicos en tiempo real evaluando el formato abstracto `{nombre_variable}`.
-    - Las llaves reaccionan inteligente y automáticamente buscando primero un Entry de la UI, luego variables globales, o dejando strings por defecto. Soporte nativo y transversal al iniciar la app.
-- **Navegación:** Cambia de vista (`change_view`) visualmente uniendo nodos.
+## 🔗 Lógica por Nodos (Pro Engine)
+- **Multi-Task Actions:** Los nodos de acción ahora son **secuenciadores**. Un solo nodo puede ejecutar múltiples tareas en orden (cambiar textos, guardar variables, navegar) ahorrando espacio en el canvas.
+- **Pro Decision Nodes (ELIF Branching):** Evolución del rombo clásico. Ahora soporta múltiples condiciones (`IF`, `ELIF`, `ELSE`) en un solo nodo.
+    - **Puertos Intuitivos:** Visualiza ramas con etiquetas claras: `S` (Sí/Verdadero), `N` (No/Falso) o `C0`, `C1`... para lógicas complejas.
+- **Smart Logic Comparison:** Motor de comparación inteligente que detecta tipos de datos. Compara `5` y `5.0` de forma numérica automáticamente, evitando errores de tipo comunes en Python.
+- **Variables Globales Dinámicas:** 
+    - Usa `{mi_variable}` en cualquier campo de texto. El motor buscará primero en los widgets activos, luego en el diccionario global `self._vars` y finalmente en literales.
+- **Navegación Avanzada:** Gestión visual de flujos de usuario mediante conexiones lógicas.
 
 ## 🛠️ Widgets Disponibles
-- **Labels:** Muestra textos estáticos o variables en crudo al arrancar.
-- **Buttons:** Lanzadores de eventos modulares.
-- **Text Entry (🔤):** Cajas para strings clásicas (`CTkEntry`).
-- **Number Entry (🔢):** Cajas preparadas paramétricamente para lógicas matemáticas (`CTkEntryNum`).
+- **Labels:** Etiquetas dinámicas con soporte para plantillas `{var}`.
+- **Buttons:** Gatillos de eventos modulares y estilizados.
+- **Text Entry (🔤):** Cajas de texto con auto-sincronización de datos.
+- **Number Entry (🔢):** Entradas numéricas con validación paramétrica.
 
 ## ⚙️ Características Core
-- **Generación de Código Limpio:** Produce código Python profesional basado en clases, listo para ser ejecutado o modificado.
-- **Historial Seguro (Undo/Redo):** Retrocede o avanza tus acciones (hasta 5 pasos) para experimentar sin miedo.
-- **Previsualización en Vivo:** Prueba tu aplicación al instante en un subproceso real antes de exportarla.
-- **Nombramiento Global Unico:** Gestión automática de nombres de variables para evitar colisiones en proyectos grandes.
-- **Exportación:** Exporta tu proyecto como un archivo `.py` independiente o compílalo.
+- **Generación de Código Robusta:** Produce archivos Python limpios y legibles basados en clases POO.
+- **Previsualización en Vivo (F5):** Ejecuta un subproceso real para testear tu app al instante.
+- **Snap-to-Grid:** Mantén tus diseños limpios y alineados sin esfuerzo.
+- **Undo/Redo:** Historial de acciones para experimentar sin riesgos.
+- **Exportación Total:** Genera archivos `.py` o compila ejecutables `.exe` directamente.
 
 ---
 
 ## 🚀 Cómo empezar
-Para iniciar el IDE, asegúrate de tener instalado `customtkinter` y ejecuta:
+Para iniciar el IDE, asegúrate de tener instalado `customtkinter` y `Pillow`:
 
 ```bash
+pip install customtkinter pillow
 python main.py
 ```
 
-*Desarrollado para potenciar la creación de interfaces Python de forma rápida y profesional.*
+*Visual Python v1.12: Potenciando la creación de interfaces Python de forma rápida, profesional e intuitiva.*
+

@@ -88,6 +88,9 @@ class CodeGenerator:
         # View management helper
         lines.extend(self._generate_navigation_helpers())
 
+        # Logic helpers (Comparison)
+        lines.extend(self._generate_logic_helpers())
+
         # User custom code (Script nodes)
         if user_code.strip():
             lines.append("")
@@ -235,6 +238,18 @@ class CodeGenerator:
                     f'{i}{i}if hasattr(self, "{var}"):')
                 lines.append(
                     f'{i}{i}{i}self.{var}.bind("{tk_event}", self.{handler_name})')
+
+        # Bind Data Variables (variable_key)
+        lines.append(f'{i}{i}# Data Bindings')
+        for view_name, view in canvas_data.get("views", {}).items():
+            for var_name, wdata in view.get("widgets", {}).items():
+                var_key = wdata.get("props", {}).get("variable_key", "")
+                if var_key and var_key.strip():
+                    lines.append(f'{i}{i}if hasattr(self, "{var_name}"):')
+                    lines.append(f'{i}{i}{i}self.{var_name}.bind("<KeyRelease>", lambda e, w=self.{var_name}: self._vars.update({{"{var_key}": w.get()}}))')
+
+        if len(lines) == 3: # Only docstring and Data Bindings comment
+            lines.append(f"{i}{i}pass")
         return lines
 
     def _generate_event_handlers(self, node_data: dict) -> list[str]:
@@ -278,7 +293,13 @@ class CodeGenerator:
         params = node.get("params", {})
 
         if ntype == "action":
-            lines.extend(self._generate_action_code(node, ind))
+            tasks = params.get("tasks", [])
+            for task in tasks:
+                lines.extend(self._generate_action_code(task, ind))
+            if not tasks and ("action" in params or "target" in params):
+                # Fallback
+                lines.extend(self._generate_action_code(params, ind))
+                
             for conn in connections:
                 if conn.get("from_node") == current_id:
                     to_id = conn.get("to_node")
@@ -287,10 +308,11 @@ class CodeGenerator:
                         lines.extend(self._trace_flow(to_id, nodes, connections, visited, base_indent))
 
         elif ntype == "decision":
-            left = params.get("left_var", "")
-            op = params.get("operator", "==")
-            right = params.get("right_var", "")
-            
+            conds = params.get("conditions", [])
+            if not conds and "left_var" in params: # Fallback to single condition
+                 conds = [{"left_var": params.get("left_var", ""), "operator": params.get("operator", "=="), "right_var": params.get("right_var", "")}]
+                 
+            # Add helper function at current indentation just once for this decision node
             lines.append(f'{ind}def _eval_node_var(app_obj, val_str):')
             lines.append(f'{ind}{self._indent}if isinstance(val_str, str) and "{{" in val_str and "}}" in val_str:')
             lines.append(f'{ind}{self._indent}{self._indent}class _DCtx(dict):')
@@ -305,32 +327,50 @@ class CodeGenerator:
             lines.append(f'{ind}{self._indent}if w and hasattr(w, "get"): return str(w.get())')
             lines.append(f'{ind}{self._indent}return str(app_obj._vars.get(val_str, val_str))')
             
-            lines.append(f'{ind}left_val = _eval_node_var(self, {repr(left)})')
-            lines.append(f'{ind}right_val = _eval_node_var(self, {repr(right)})')
-            
-            # Use safe robust str cast string conversion as requested
-            lines.append(f'{ind}if str(left_val) {op} str(right_val):')
-            
-            true_lines = []
-            for conn in connections:
-                if conn.get("from_node") == current_id and conn.get("from_port") == "true":
-                    to_id = conn.get("to_node", "")
-                    if to_id not in visited:
-                        vp = set(visited); vp.add(to_id)
-                        true_lines.extend(self._trace_flow(to_id, nodes, connections, vp, base_indent + 1))
-            if true_lines: lines.extend(true_lines)
-            else: lines.append(f'{ind}{self._indent}pass')
-            
+            # First emit all variable evaluations (ALL must come before the if/elif/else chain)
+            for idx, cond in enumerate(conds):
+                left = cond.get("left_var", "")
+                right = cond.get("right_var", "")
+                lines.append(f'{ind}left_val_{idx} = _eval_node_var(self, {repr(left)})')
+                lines.append(f'{ind}right_val_{idx} = _eval_node_var(self, {repr(right)})')
+
+            # Now emit the contiguous if / elif / else chain
+            for idx, cond in enumerate(conds):
+                op = cond.get("operator", "==")
+                if_word = "if" if idx == 0 else "elif"
+                lines.append(f'{ind}{if_word} self._compare(left_val_{idx}, {repr(op)}, right_val_{idx}):')
+                
+                branch_lines = []
+                for conn in connections:
+                    if conn.get("from_node") == current_id and (
+                        conn.get("from_port") == f"cond_{idx}"
+                        or (idx == 0 and conn.get("from_port") == "true")
+                    ):
+                        to_id = conn.get("to_node", "")
+                        if to_id not in visited:
+                            vp = set(visited); vp.add(to_id)
+                            branch_lines.extend(self._trace_flow(to_id, nodes, connections, vp, base_indent + 1))
+                if branch_lines:
+                    lines.extend(branch_lines)
+                else:
+                    lines.append(f'{ind}{self._indent}pass')
+
+            # else must be immediately after the last if/elif block — no blank lines in between
             lines.append(f'{ind}else:')
-            false_lines = []
+            else_lines = []
             for conn in connections:
-                if conn.get("from_node") == current_id and conn.get("from_port") == "false":
+                if conn.get("from_node") == current_id and (
+                    conn.get("from_port") == "else"
+                    or conn.get("from_port") == "false"
+                ):
                     to_id = conn.get("to_node", "")
                     if to_id not in visited:
                         vp = set(visited); vp.add(to_id)
-                        false_lines.extend(self._trace_flow(to_id, nodes, connections, vp, base_indent + 1))
-            if false_lines: lines.extend(false_lines)
-            else: lines.append(f'{ind}{self._indent}pass')
+                        else_lines.extend(self._trace_flow(to_id, nodes, connections, vp, base_indent + 1))
+            if else_lines:
+                lines.extend(else_lines)
+            else:
+                lines.append(f'{ind}{self._indent}pass')
 
         elif ntype == "event":
             for conn in connections:
@@ -342,9 +382,8 @@ class CodeGenerator:
 
         return lines
 
-    def _generate_action_code(self, node: dict, ind: str) -> list[str]:
+    def _generate_action_code(self, params: dict, ind: str) -> list[str]:
         lines = []
-        params = node.get("params", {})
         target = params.get("target", "")
         action = params.get("action", "")
         value = params.get("value", "")
@@ -417,6 +456,31 @@ class CodeGenerator:
             f"{i}{i}vdata = next((v for v in self.ui_data.values() if v.get('view') == view_name), None)",
             f"{i}{i}if vdata and 'bg_color' in vdata:",
             f"{i}{i}{i}self.configure(fg_color=vdata['bg_color'])",
+        ]
+
+    def _generate_logic_helpers(self) -> list[str]:
+        i = self._indent
+        return [
+            f"{i}def _compare(self, v1, op, v2):",
+            f"{i}{i}# Smart comparison: try float, fall back to string",
+            f"{i}{i}try:",
+            f"{i}{i}{i}n1, n2 = float(v1), float(v2)",
+            f"{i}{i}{i}if op == '==': return n1 == n2",
+            f"{i}{i}{i}if op == '!=': return n1 != n2",
+            f"{i}{i}{i}if op == '>': return n1 > n2",
+            f"{i}{i}{i}if op == '<': return n1 < n2",
+            f"{i}{i}{i}if op == '>=': return n1 >= n2",
+            f"{i}{i}{i}if op == '<=': return n1 <= n2",
+            f"{i}{i}except:",
+            f"{i}{i}{i}v1, v2 = str(v1), str(v2)",
+            f"{i}{i}{i}if op == '==': return v1 == v2",
+            f"{i}{i}{i}if op == '!=': return v1 != v2",
+            f"{i}{i}{i}if op == '>': return v1 > v2",
+            f"{i}{i}{i}if op == '<': return v1 < v2",
+            f"{i}{i}{i}if op == '>=': return v1 >= v2",
+            f"{i}{i}{i}if op == '<=': return v1 <= v2",
+            f"{i}{i}return False",
+            ""
         ]
 
     # ─── Helpers ──────────────────────────────────────────────────

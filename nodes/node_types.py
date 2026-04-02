@@ -14,24 +14,18 @@ def create_event_node_params(var_name: str = "", trigger: str = "Click") -> dict
     }
 
 
-def create_action_node_params(target: str = "", action: str = "change_text",
-                               value: str = "") -> dict:
-    """Parameters for an Action Node."""
+def create_action_node_params() -> dict:
+    """Parameters for an Action Node. Supports multiple sequential tasks."""
     return {
-        "target": target,
-        "action": action,
-        "value": value,
+        "tasks": [{"action": "change_text", "target": "", "value": ""}],
         "actions_available": ACTION_TYPES,
     }
 
 
-def create_decision_node_params(left_var: str = "", operator: str = "==",
-                                right_var: str = "") -> dict:
-    """Parameters for a Decision (If/Else) Node."""
+def create_decision_node_params() -> dict:
+    """Parameters for a Decision Node. Supports multiple conditions (if, elif...)."""
     return {
-        "left_var": left_var,
-        "operator": operator,
-        "right_var": right_var,
+        "conditions": [{"left_var": "", "operator": "==", "right_var": ""}],
         "operators_available": ["==", "!=", ">", "<", ">=", "<="]
     }
 

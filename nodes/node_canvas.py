@@ -255,10 +255,14 @@ class NodeCanvas(ctk.CTkFrame):
         if is_decision:
             if ptype == "input":
                 return node.x, node.y + NODE_H/2
-            elif port_name == "true":
-                return node.x + NODE_W * 0.75, node.y + NODE_H * 0.25
-            else: # false
-                return node.x + NODE_W * 0.75, node.y + NODE_H * 0.75
+            else:
+                idx = node.outputs.index(port_name) if port_name in node.outputs else 0
+                total = len(node.outputs)
+                # Space them vertically between 10% and 90% of NODE_H
+                spacing = 0.8 / max(1, (total - 1)) if total > 1 else 0
+                y = node.y + NODE_H * (0.1 + idx * spacing if total > 1 else 0.5)
+                # Add some custom offset depending if it is Else so they don't overlap too much
+                return node.x + NODE_W * 0.75, y
         else:
             if ptype == "input":
                 idx = node.inputs.index(port_name) if port_name in node.inputs else 0
@@ -281,7 +285,7 @@ class NodeCanvas(ctk.CTkFrame):
         # Output
         for pn in node.outputs:
             px, py = self._get_port_coords(node, pn, "output")
-            color = "#2ecc71" if pn == "true" else ("#e74c3c" if pn == "false" else "#ffffff")
+            color = "#2ecc71" if pn.startswith("cond") or pn == "true" else ("#e74c3c" if pn == "else" or pn == "false" else "#ffffff")
             p_tag = f"port_{node.id}_{pn}"
             self.canvas.create_oval(
                 px - PORT_R, py - PORT_R, px + PORT_R, py + PORT_R,
@@ -289,7 +293,14 @@ class NodeCanvas(ctk.CTkFrame):
                 tags=(tag, p_tag, "port_out"))
             self.canvas.tag_bind(p_tag, "<Button-1>", lambda e, n=node.id, p=pn: (self._on_port_click(n, p, "output"), "break")[1])
             if node.node_type == "decision":
-                self.canvas.create_text(px - 10, py, text=pn[0].upper(), fill=color, font=("Segoe UI", 8, "bold"), tags=(tag, p_tag, "port_label"))
+                # Single condition nodes show S (Si) and N (No) for high intuition
+                is_binary = len(node.outputs) == 2
+                if is_binary:
+                    label_text = "S" if (pn.startswith("cond") or pn == "true") else "N"
+                else:
+                    label_text = "E" if (pn == "else" or pn == "false") else (f"C{pn.split('_')[1]}" if pn.startswith("cond") else pn[0].upper())
+                    
+                self.canvas.create_text(px - 14, py, text=label_text, fill=color, font=("Segoe UI", 8, "bold"), tags=(tag, p_tag, "port_label"))
 
     def _draw_connection(self, conn: Connection) -> None:
         n1, n2 = self.engine.nodes.get(conn.from_node), self.engine.nodes.get(conn.to_node)
